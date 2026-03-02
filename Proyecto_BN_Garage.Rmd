@@ -8,6 +8,11 @@ output:
     number_sections: yes
 ---
 
+# Estudiantes
+Carlos
+Héctor
+
+
 # Objetivo
 
 El trabajo consiste en la creación de la *Red Bayesiana* `Garage` y realizar ejercicios de inferencia. Se hará uso de los paquetes `bnlearn` y `gRain`.

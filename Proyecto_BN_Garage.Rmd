@@ -35,6 +35,7 @@ Creación del Grafo Acíclico Dirigido según probabilidad factorizada.
 
 ```{r}
 library(bnlearn)
+library(Rgraphviz)
 #solucion
 dag<- model2network("[A][T][M|A:T][SP|M][B|M]")
 plot(dag)
@@ -125,12 +126,13 @@ prob_M <- querygrain(jt, nodes = "M", type = "marginal")
 prob_M
 
 ```
+
 Es más común  que un vehículo que llegue al taller tenga un kilometraje alto. Concretamente, hay un 63.8% de probabilidad de que el kilometraje sea alto (h=high), frente a solo un 36.2% de probabilidad de que sea bajo (l=low).
 
 Interpreta la etiquetas de la Edad en función del Kilometraje.
 
 ```{r}
-#solución 
+#solucion 
 #Para interpretar correctamente las etiquetas de la Edad (A) en función del Kilometraje (M), podemos observar cómo cambia la probabilidad de tener un kilometraje alto (h) o bajo (l) a medida que cambiamos el estado de la edad del vehículo.
 
 #Aunque ya intuimos que n es new (nuevo), m es medium (medio) y o es old (viejo), podemos demostrarlo matemáticamente calculando la probabilidad condicional P(M∣A).
@@ -154,30 +156,121 @@ q_M_A_o
 ¿Qué combinación de Edad y tipo de coche es menos frecuente?
 
 ```{r}
-#solución 
+#solucion 
 
+# Probabilidad conjunta P(A,T)
+prob_AT <- querygrain(jt, nodes = c("A","T"), type = "joint")
+prob_AT
+
+# buscamos la combinación menos frecuente
+min_idx <- which(prob_AT == min(prob_AT), arr.ind = TRUE)
+
+# usamos índices numéricos
+A_min <- dimnames(prob_AT)$A[min_idx[1, 1]]
+T_min <- dimnames(prob_AT)$T[min_idx[1, 2]]
+p_min <- prob_AT[min_idx[1, 1], min_idx[1, 2]]
+
+A_min; T_min; p_min
 ```
+
++ La combinación menos frecuente es Edad = n y Tipo = a1, con probabilidad 0.06 = 6%. 
 
 Determina el Kilometraje medio para cada tipo de coche. Supón que `h=high=150000` y `l=low=50000`
 
 ```{r}
-#solución 
+#solucion 
 
+km_vals <- c(h = 150000, l = 50000)
+
+# calcular P(M|T=t) y el kilometraje medio E[km | T=t]
+km_mean_given_T <- function(t_state){
+  jt_t <- setEvidence(jt, nodes = "T", states = t_state)
+  qM  <- querygrain(jt_t, nodes = "M", type = "marginal")
+  
+  # extraemos el vector de probabilidades de M
+  pM <- if (is.list(qM)) qM$M else qM
+  
+  mean_km <- sum(pM * km_vals[names(pM)])
+  
+  c(P_h = as.numeric(pM["h"]),
+    P_l = as.numeric(pM["l"]),
+    Mean_km = mean_km)
+}
+
+# aplicamos a cada tipo
+stats <- t(sapply(T.lv, km_mean_given_T))
+res <- data.frame(T = rownames(stats), stats, row.names = NULL)
+
+res
 ```
+
++ Para los coches tipo `a1` el kilometraje medio es de 104000 Km, mientras que para los coches tipo `a2` el Kilometraje medio es de 118000 Km.
 
 Nos llama la grúa al taller y sabemos que nos llega un coche de tal edad y tipo. ¿Qué probabilidad esperamos de cambiarle los frenos? **Nota: mira la ayuda de querygrain para condicionar por 2 variables**
 
 ```{r}
 #solución 
 
+# Queremos P(B | A, T). para ello fijamos evidencia en dos nodos (A y T)
+# consultamos la marginal de B.
+
+prob_brake_given_AT <- function(a_state, t_state){
+  jt_e <- setEvidence(jt, nodes = c("A","T"), states = c(a_state, t_state))
+  qB   <- querygrain(jt_e, nodes = "B", type = "marginal")
+  
+  # extraemos el vector de probabilidades de B
+  pB <- if (is.list(qB)) qB$B else qB
+  
+  # Probabilidad de que haya que cambiar frenos (B = "yes")
+  as.numeric(pB["yes"])
+}
+
+# calculamos para todas las combinaciones de Edad (A) y Tipo (T)
+grid_AT <- expand.grid(A = A.lv, T = T.lv, stringsAsFactors = FALSE)
+grid_AT$P_B_yes <- mapply(prob_brake_given_AT, grid_AT$A, grid_AT$T)
+
+# mostramos en tabla A filas T columnas
+tab_P_B_yes <- xtabs(P_B_yes ~ A + T, data = grid_AT)
+tab_P_B_yes
+grid_AT # así lo vemos mejor
 ```
+
++ Podemos observar en la tabla a probabilidad esperada de cambiar frenos sabiendo a la vez la edad del coche y su tipo, por ejemplo, siendo la menor probabilidad en coches con edad `n` y tipo `a1`.
 
 ¿Cuál es la situación más probable (MAP) en nuestro taller? ¿tiene sentido?
 
 ```{r}
 #solucion
 
+# MAP = configuración conjunta (A,T,M,SP,B) con mayor probabilidad P(A,T,M,SP,B)
+nodes_all <- c("A","T","M","SP","B")
+joint_all <- querygrain(jt, nodes = nodes_all, type = "joint")
+if (is.list(joint_all)) joint_all <- joint_all[[1]]
+
+# índice del máximo
+imax <- which(joint_all == max(joint_all), arr.ind = TRUE)[1, ]
+
+# Nombres y orden de las dimensiones del array devuelto
+dn <- dimnames(joint_all)
+vars_order <- names(dn) 
+
+# Aseguramos que imax esté nombrado por variable
+if (is.null(names(imax))) names(imax) <- vars_order
+
+# Decodificamos el MAP siguiendo el orden
+MAP_raw <- lapply(vars_order, function(v) dn[[v]][ imax[v] ])
+names(MAP_raw) <- vars_order
+
+# Lo reordenamos A,T,M,SP,B
+MAP <- MAP_raw[c("A","T","M","SP","B")]
+
+p_MAP <- joint_all[imax[1], imax[2], imax[3], imax[4], imax[5]]
+
+MAP
+p_MAP
 ```
+
++ Se indica la situación más probable en el taller es que llega un coche viejo (A=0), de tipo a2, con kilometraje alto, y lo más probable es que necesite cambiar tanto las bujías como los frenos. Esta situación ocurre con una probabilidad de 0.14112. Sí tiene sentido ya que el tipo a2 es el más frecuente, los coches viejos tienden tener más kilometraje, y cuando el kilometraje es alto aumentan las probabilidades de que haga falta cambiar bujías y frenos.
 
 ## Razonamiento con Evidencias
 
@@ -186,20 +279,74 @@ Determina cómo se modifica la probabilidad de cambiar los frenos si sabemos que
 ```{r}
 #solucion
 
+# probabilidad de cambiar frenos sin evidencias
+qB0 <- querygrain(jt, nodes = "B", type = "marginal")
+pB0 <- if (is.list(qB0)) qB0$B else qB0
+pB0
+
+# probabilidad de cambiar frenos sabiendo que el coche es viejo
+# viejo = 0
+old_state <- if ("o" %in% A.lv) "o" else if ("0" %in% A.lv) "0" else A.lv[length(A.lv)]
+
+jt_old <- setEvidence(jt, nodes = "A", states = old_state)
+qBold <- querygrain(jt_old, nodes = "B", type = "marginal")
+pBold <- if (is.list(qBold)) qBold$B else qBold
+pBold
+
 ```
+
++ Si sabemos que el vehículo es viejo la probabilidad de cambiarle los frenos aumenta de 0.4828 a 0.604. Esto es razonamiento causal ya que estamos usando información de una causa para actualizar la probabilidad de un efecto.
 
 Determina cómo se modifica la probabilidad de que el vehículo sea nuevo, cuando sabemos que necesita un cambio de bujías y de frenos. ¿(según las diapositivas de clase) es razonamiento evidencial o causal?
 
 ```{r}
 #solucion
 
+# probabilidad de que sea nuevo sin evidencias
+qA0 <- querygrain(jt, nodes = "A", type = "marginal")
+pA0 <- if (is.list(qA0)) qA0$A else qA0
+p_new_0 <- as.numeric(pA0["n"])
+pA0
+
+# probabilidad de que sea nuevo sabiendo que necesita bujías y frenos
+jt_rep <- setEvidence(jt, nodes = c("SP","B"), states = c("yes","yes"))
+qA_rep <- querygrain(jt_rep, nodes = "A", type = "marginal")
+pA_rep <- if (is.list(qA_rep)) qA_rep$A else qA_rep
+p_new_rep <- as.numeric(pA_rep["n"])
+pA_rep
+
+# comparación
+c(P_new = p_new_0,
+  P_new_given_SPyes_Byes = p_new_rep,
+  diff = p_new_rep - p_new_0)
 ```
+
++ Al saber que el coche necesita cambiar bujías y frenos la probabilidad de que sea nuevo disminuye: pasa de 0.20 a 0.057. Esto es razonamiento evidencial: partimos de síntomas/efectos observados para inferir una causa.
 
 Determina cómo se modifica la probabilidad de la edad para cada tipo de vehículo, cuando sabemos que Kilometraje es alto.
 
 ```{r}
 #solución 
 
+# evidencia es el kilometraje alto
+jt_Mh <- setEvidence(jt, nodes = "M", states = "h")
+
+# para cada tipo, calculamos la distribución de A condicionada en M=h y T=t
+age_given_type <- function(t_state){
+  jt_e <- setEvidence(jt_Mh, nodes = "T", states = t_state)
+  qA <- querygrain(jt_e, nodes = "A", type = "marginal")
+  pA <- if (is.list(qA)) qA$A else qA
+  pA
+}
+
+res_list <- lapply(T.lv, age_given_type)
+names(res_list) <- T.lv
+
+# lo ponemos en una tabla filas = A, columnas = T
+res_mat <- do.call(cbind, res_list)
+colnames(res_mat) <- T.lv
+
+res_mat
 ```
 
 ¿Cómo se modifican las expectativas (de las combinaciones) de las reparaciones cuando se modifica el tipo de coche?
@@ -207,7 +354,49 @@ Determina cómo se modifica la probabilidad de la edad para cada tipo de vehícu
 ```{r}
 #solucion
 
+# queremos ver cómo cambia la distribución de combinaciones de reparaciones (SP,B)
+# cuando condicionamos por el tipo T.
+
+repair_combos_given_T <- function(t_state){
+  jt_t <- setEvidence(jt, nodes = "T", states = t_state)
+  qSB  <- querygrain(jt_t, nodes = c("SP","B"), type = "joint")
+  if (is.list(qSB)) qSB <- qSB[[1]]
+
+  # aseguramos que es una tabla y la pasamos a formato largo
+  qSB <- as.table(qSB)
+  df  <- as.data.frame(qSB, stringsAsFactors = FALSE)
+
+  # las dos primeras columnas son los estados (SP y B, o B y SP)
+  c1 <- names(df)[1]
+  c2 <- names(df)[2]
+  names(df)[3] <- "Prob"
+
+  # nº de reparaciones en la combinación (0,1,2)
+  df$n_rep <- (df[[c1]] == "yes") + (df[[c2]] == "yes")
+
+  # esperanza del nº de reparaciones
+  E_rep <- sum(df$Prob * df$n_rep)
+
+  list(joint = qSB, df = df, E_repairs = E_rep)
+}
+
+r_a1 <- repair_combos_given_T("a1")
+r_a2 <- repair_combos_given_T("a2")
+
+# probabilidades de cada combinación (SP,B) para cada tipo
+r_a1$joint
+r_a2$joint
+
+# esperanza del nº de reparaciones (0/1/2) por tipo
+c(E_repairs_a1 = r_a1$E_repairs,
+  E_repairs_a2 = r_a2$E_repairs)
+
+# (Opcional) ver las combinaciones ordenadas por probabilidad
+r_a1$df[order(-r_a1$df$Prob), ]
+r_a2$df[order(-r_a2$df$Prob), ]
 ```
+
++ Al pasar de tipo a1 a tipo a2 aumenta la probabilidad de combinaciones con reparaciones sube la de hacer ambas (bujías y frenos: 0.307 a 0.384) y también la de hacer solo una mientras que baja la de no hacer ninguna (0.405 a 0.3). Por eso la expectativa del número de reparaciones aumenta de 0.902 (a1) a 1.084 (a2), en general los coches a2 requieren más intervenciones.
 
 Interpreta el siguiente código... ¿cuándo puede ser interesante la versión 2) de la consulta?
 

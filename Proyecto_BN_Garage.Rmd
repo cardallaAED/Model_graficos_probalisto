@@ -20,6 +20,28 @@ El trabajo consiste en la creación de la *Red Bayesiana* `Garage` y realizar ej
 Un taller dispone de una *Red Bayesiana* para modelizar las probabilidades de su día a día. Los vehículos están caracterizados con las variables Edad (A), Tipo (T), Kilometraje (M) y si necesitan cambios de bujías (SP) y/o frenos (B)
 
 ![Garage](bayesGarage.png)
+```{r}
+
+if (!requireNamespace("bnlearn", quietly = TRUE)) {
+    install.packages("bnlearn")
+}
+
+
+if (!requireNamespace("Rgraphviz", quietly = TRUE)) {
+
+    if (!requireNamespace("BiocManager", quietly = TRUE)) {
+        install.packages("BiocManager")
+    }
+    BiocManager::install("Rgraphviz", update = FALSE, ask = FALSE)
+}
+
+
+library(bnlearn)
+library(Rgraphviz)
+
+
+print("Librerías listas para usar.")
+```
 
 # Red Bayesiana
 
@@ -34,8 +56,6 @@ $P(A,T,M,SP,B)= P(A)⋅P(T)⋅P(M∣A,T)⋅P(SP∣M)⋅P(B∣M)$
 Creación del Grafo Acíclico Dirigido según probabilidad factorizada.
 
 ```{r}
-library(bnlearn)
-library(Rgraphviz)
 #solucion
 dag<- model2network("[A][T][M|A:T][SP|M][B|M]")
 plot(dag)

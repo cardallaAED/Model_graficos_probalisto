@@ -439,6 +439,55 @@ Plantea 3 preguntas/cuestiones al "Garage". Desarrolla la consulta probabilista 
 
 *Nota: Puedes añadir/quitar cualquier elemento o dato que consideres necesario.*
 
-```{r}
+## Pregunta 1
 
+*¿Cuál es la probabilidad aproximada de que un vehículo necesite cambiar AMBAS piezas "bujías" y "frenos" sabiendo que es un coche tipo `a2` de edad media (`m`)?*
+
+```{r}
+#Utilizando métodos de simulación de Montecarlo
+set.seed(666)
+
+# Usamos cpquery para generar muestras y estimar la probabilidad
+prob_aprox <- cpquery(bn, 
+                      event = (SP == "yes") & (B == "yes"), 
+                      evidence = (T == "a2") & (A == "m"), 
+                      n = 10^6)
+prob_aprox
+#
 ```
+En este caso, simulamos un millón de escenarios (n=10^6) y filtramos aquellos donde el coche es tipo a2 y edad media. Observamos que la probabilidad de requerir ambas reparaciones ronda el 39%.
+
+## Pregunta 2
+
+*¿Son independientes las necesidades de cambiar frenos (B) y bujías (SP)? ¿Qué ocurre topológicamente en el grafo si un mecánico nos confirma el estado del kilometraje (M)?*
+
+```{r}
+# Comprobamos la independencia sin conocer M
+indep_sin_M <- dsep(dag, x = "SP", y = "B")
+
+# Comprobamos la independencia conociendo la evidencia M
+indep_con_M <- dsep(dag, x = "SP", y = "B", z = "M")
+
+c(Independientes_Sin_Evidencia = indep_sin_M, 
+  Independientes_Con_Kilometraje = indep_con_M)
+```
+
+Los nodos SP y B no son independientes por defecto (FALSE) porque la influencia fluye a través de su causa común, el kilometraje (M). Sin embargo, cuando observamos M (z="M"), bloqueamos ese flujo de información. Sabiendo los kilómetros exactos, sabemos lo que pase con los frenos ya no nos da información extra sobre las bujías, devolviendo  (TRUE).
+
+## Pregunta 3
+
+*La Edad (A) y el Tipo (T) son independientes a priori. Pero, ¿qué pasa si observamos un efecto común como que el Kilometraje es alto (h)? ¿Cómo cambia la probabilidad de que el coche sea viejo (0) si además descubrimos que es de tipo a1?*
+
+```{r}
+# Probabilidad de que sea viejo (A="0") sabiendo SOLO que M="h"
+jt_M_alta <- setEvidence(jt, nodes = "M", states = "h")
+q_viejo_M <- querygrain(jt_M_alta, nodes = "A", type = "marginal")$A["0"]
+
+# Probabilidad de que sea viejo sabiendo M="h" Y que el Tipo es "a1"
+jt_M_T <- setEvidence(jt, nodes = c("M", "T"), states = c("h", "a1"))
+q_viejo_M_T <- querygrain(jt_M_T, nodes = "A", type = "marginal")$A["0"]
+
+c(P_Viejo_solo_KmAlto = as.numeric(q_viejo_M), 
+  P_Viejo_KmAlto_y_TipoA1 = as.numeric(q_viejo_M_T))
+```
+Con los valores que se han obtenido (0.5266458 y 0.5185185), la probabilidad en realidad disminuye ligeramente al conocer el tipo de coche.   A priori, la edad y el tipo no tienen relación. Sin embargo, al observar un efecto común como que el kilometraje es alto (`h`), ambas variables se vuelven dependientes. Si nos enteramos de que el coche es tipo `a1`, la probabilidad de que el coche sea viejo (`0`) **disminuye** ligeramente (pasa de ~52.66% a ~51.85%). Esto tiene sentido si miramos las CPTs originales: un coche viejo tipo `a2` tiene un 90% de probabilidad de tener kilometraje alto, mientras que un viejo tipo `a1` solo un 70%. Al confirmar que es tipo `a1`, el modelo ajusta sus expectativas, reduciendo la probabilidad de que sea viejo en comparación a si no supiéramos el tipo. Predomina el efecto del tipo `a2` que es más frecuente y propenso a kilometrajes altos).
